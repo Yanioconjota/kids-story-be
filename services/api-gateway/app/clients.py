@@ -1,4 +1,6 @@
+import json
 import os
+from collections.abc import AsyncGenerator
 
 import httpx
 
@@ -10,6 +12,7 @@ LLM_URL = os.getenv("LLM_URL", "http://llm-service:8002")
 STORY_URL = os.getenv("STORY_URL", "http://story-service:8003")
 
 TIMEOUT = 30.0
+STREAM_TIMEOUT = 120.0
 
 
 async def moderate_story_request(request: StoryRequest) -> ModerationResult:
@@ -55,3 +58,31 @@ async def save_story(story: Story) -> Story:
         raise downstream_error("story-service", str(exc)) from exc
     except httpx.RequestError as exc:
         raise downstream_error("story-service", f"unreachable: {exc}") from exc
+
+
+async def stream_story_chunks(request: StoryRequest) -> AsyncGenerator[str, None]:
+    """Consume SSE from llm-service /generate/stream and yield raw text chunks."""
+    try:
+        async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
+            async with client.stream(
+                "POST",
+                f"{LLM_URL}/generate/stream",
+                json=request.model_dump(mode="json"),
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        data = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    if data.get("done"):
+                        return
+                    chunk = data.get("chunk", "")
+                    if chunk:
+                        yield chunk
+    except httpx.HTTPStatusError as exc:
+        raise downstream_error("llm-service", str(exc)) from exc
+    except httpx.RequestError as exc:
+        raise downstream_error("llm-service", f"unreachable: {exc}") from exc

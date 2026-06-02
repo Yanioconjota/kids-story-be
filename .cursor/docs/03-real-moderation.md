@@ -1,6 +1,6 @@
 # 03 — Real Moderation
 
-**Status:** 🟡 Planned · **Owning service:** `moderation-service`
+**Status:** ✅ Done · **Owning service:** `moderation-service`
 
 ## Summary
 

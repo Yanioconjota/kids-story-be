@@ -1,6 +1,6 @@
 # 01 — Real LLM Integration
 
-**Status:** 🟡 Planned · **Owning service:** `llm-service`
+**Status:** ✅ Done · **Owning service:** `llm-service`
 
 ## Summary
 

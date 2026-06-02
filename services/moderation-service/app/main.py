@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from shared.contracts.story import ModerationResult, StoryRequest
+from app.moderator import moderate
 
 app = FastAPI(title="moderation-service")
 
@@ -11,6 +12,5 @@ async def health():
 
 
 @app.post("/moderate", response_model=ModerationResult)
-async def moderate(request: StoryRequest) -> ModerationResult:
-    # MVP: mock — all story requests pass moderation
-    return ModerationResult(approved=True)
+async def moderate_request(request: StoryRequest) -> ModerationResult:
+    return await moderate(request)

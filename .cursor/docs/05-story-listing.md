@@ -1,6 +1,6 @@
 # 05 — Story Listing + Pagination
 
-**Status:** 🟡 Planned · **Owning service:** `story-service`
+**Status:** ✅ Done · **Owning service:** `story-service`
 
 ## Summary
 

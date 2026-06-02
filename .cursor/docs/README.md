@@ -18,11 +18,11 @@ the contract changes, the implementation approach, and how it follows the projec
 | # | Feature | Service(s) | Status | Doc |
 |---|---------|-----------|--------|-----|
 | 0 | MVP bootstrap (4 services, mock LLM/moderation) | all | ✅ Done | `../specs/kids-story-backend-devplan.md` |
-| 1 | Real LLM integration | `llm-service` | 🟡 Planned | `01-llm-integration.md` |
-| 2 | SSE streaming | `llm-service`, `api-gateway` | 🟡 Planned | `02-sse-streaming.md` |
-| 3 | Real moderation | `moderation-service` | 🟡 Planned | `03-real-moderation.md` |
-| 4 | Redis caching | `api-gateway` / `llm-service` | 🟡 Planned | `04-redis-caching.md` |
-| 5 | Story listing + pagination | `story-service` | 🟡 Planned | `05-story-listing.md` |
+| 1 | Real LLM integration | `llm-service` | ✅ Done | `01-llm-integration.md` |
+| 2 | SSE streaming | `llm-service`, `api-gateway` | ✅ Done | `02-sse-streaming.md` |
+| 3 | Real moderation | `moderation-service` | ✅ Done | `03-real-moderation.md` |
+| 4 | Redis caching | `api-gateway` | ✅ Done | `04-redis-caching.md` |
+| 5 | Story listing + pagination | `story-service` | ✅ Done | `05-story-listing.md` |
 | 6 | Lightweight user identity | `api-gateway`, `story-service` | ⚪ Later | — |
 | 7 | Full authentication | `api-gateway` | ⚪ Later | — |
 

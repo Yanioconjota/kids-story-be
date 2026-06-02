@@ -1,6 +1,6 @@
 # 02 — SSE Streaming
 
-**Status:** 🟡 Planned · **Owning services:** `llm-service` (produces), `api-gateway` (forwards)
+**Status:** ✅ Done · **Owning services:** `llm-service` (produces), `api-gateway` (forwards)
 
 ## Summary
 

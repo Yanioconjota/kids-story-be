@@ -1,6 +1,10 @@
+import json
+
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 
 from shared.contracts.story import Story, StoryRequest
+from app.llm_client import generate_content, stream_content
 
 app = FastAPI(title="llm-service")
 
@@ -12,21 +16,23 @@ async def health():
 
 @app.post("/generate", response_model=Story)
 async def generate(request: StoryRequest) -> Story:
-    # MVP: mock story generation
-    quest = (
-        f"Their quest began when: {request.prompt}"
-        if request.prompt
-        else "Their adventure was just beginning."
-    )
-    content = (
-        f"Once upon a time, in a land of {request.child_theme}, "
-        f"there lived a brave hero named {request.character_name}. "
-        f"{quest} "
-        "And they lived happily ever after."
-    )
+    content = await generate_content(request)
     return Story(
         child_theme=request.child_theme,
         character_name=request.character_name,
         prompt=request.prompt,
         content=content,
     )
+
+
+@app.post("/generate/stream")
+async def generate_stream(request: StoryRequest) -> StreamingResponse:
+    async def event_generator():
+        try:
+            async for chunk in stream_content(request):
+                yield f"data: {json.dumps({'chunk': chunk, 'done': False})}\n\n"
+            yield f"data: {json.dumps({'chunk': '', 'done': True})}\n\n"
+        except Exception as exc:
+            yield f"event: error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

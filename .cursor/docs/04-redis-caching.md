@@ -1,6 +1,6 @@
 # 04 — Redis Caching
 
-**Status:** 🟡 Planned · **Owning service:** `api-gateway` (recommended) or `llm-service`
+**Status:** ✅ Done · **Owning service:** `api-gateway`
 
 ## Summary
 
