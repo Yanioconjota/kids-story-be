@@ -198,3 +198,42 @@ Client → POST /stories (api-gateway)
 - **Pydantic models:** 3 shared contracts
 - **External service calls:** 3 (gateway → moderation, llm, story)
 - **Effort:** Medium
+
+---
+
+## Status: MVP Bootstrap — DONE ✅
+
+The bootstrap above is implemented and verified end-to-end: `POST /stories` returns `201`
+with a persisted Story (MongoDB), all four services healthy under `docker-compose.yml`.
+The LLM and moderation services are still **mocked** by design.
+
+---
+
+## Post-MVP Roadmap
+
+Detailed per-feature design notes live in the knowledge base: `.cursor/docs/`.
+
+### Recommended order: LLM → SSE streaming → Caching
+
+| # | Feature | Service(s) | Why now | KB doc |
+|---|---------|-----------|---------|--------|
+| 1 | **Real LLM integration** | `llm-service` | Core product value; replaces the string-template mock | `.cursor/docs/01-llm-integration.md` |
+| 2 | **SSE streaming** | `llm-service`, `api-gateway` | Stream tokens as generated instead of waiting for the full story | `.cursor/docs/02-sse-streaming.md` |
+| 3 | **Real moderation** | `moderation-service` | Replace `approved: True` mock with real child-safety checks | `.cursor/docs/03-real-moderation.md` |
+| 4 | **Redis caching** | `api-gateway` / `llm-service` | Redis already wired; cache identical Story Requests to save tokens | `.cursor/docs/04-redis-caching.md` |
+| 5 | **Story listing + pagination** | `story-service` | `GET /stories`; `created_at` index already in place | `.cursor/docs/05-story-listing.md` |
+
+### Later (explicitly out of current MVP scope)
+
+| # | Feature | Notes |
+|---|---------|-------|
+| 6 | Lightweight user identity | Optional client-generated `user_id` on `StoryRequest` (no login) to filter stories per device |
+| 7 | Full authentication | JWT / sessions — productization step; currently excluded by `000-project-context.md` |
+
+### Cross-cutting principles for all roadmap items
+
+- Keep the four-service boundaries intact; the gateway orchestrates, services own their data.
+- New request/response shapes go through shared Pydantic contracts in `shared/contracts/`.
+- Inter-service calls stay on `httpx.AsyncClient` with timeouts.
+- Cache and moderation failures must degrade gracefully — never break the core flow.
+- Each feature ships with pytest coverage (behavior, not internals).
