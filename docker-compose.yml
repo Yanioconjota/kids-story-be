@@ -1,11 +1,11 @@
 services:
   api-gateway:
     build:
-      context: ..
+      context: .
       dockerfile: services/api-gateway/Dockerfile
     ports:
       - "8000:8000"
-    env_file: ../services/api-gateway/.env
+    env_file: services/api-gateway/.env
     depends_on:
       - moderation-service
       - llm-service
@@ -13,27 +13,27 @@ services:
 
   moderation-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/moderation-service/Dockerfile
     ports:
       - "8001:8001"
-    env_file: ../services/moderation-service/.env
+    env_file: services/moderation-service/.env
 
   llm-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/llm-service/Dockerfile
     ports:
       - "8002:8002"
-    env_file: ../services/llm-service/.env
+    env_file: services/llm-service/.env
 
   story-service:
     build:
-      context: ..
+      context: .
       dockerfile: services/story-service/Dockerfile
     ports:
       - "8003:8003"
-    env_file: ../services/story-service/.env
+    env_file: services/story-service/.env
     depends_on:
       - mongo
 

@@ -60,8 +60,7 @@ kids-story-be/
 │   │   └── story.py             # Pydantic: StoryRequest, Story, ModerationResult
 │   └── errors/
 │       └── exceptions.py        # shared HTTPException helpers / error shapes
-├── infra/
-│   └── docker-compose.yml       # 4 services + mongo + redis
+├── docker-compose.yml           # 4 services + mongo + redis
 ├── .gitignore                   # ignore .env, __pycache__, etc.
 └── README.md
 ```
@@ -171,9 +170,9 @@ Client → POST /stories (api-gateway)
 ### Docker / Config
 - [ ] Per-service `Dockerfile` (python slim base, install `requirements.txt`, `COPY shared/`, uvicorn entrypoint).
 - [ ] Per-service `.env.template` (URLs, `MONGO_URI`, `REDIS_URL`, `PORT`) — never commit `.env`.
-- [ ] `infra/docker-compose.yml`: 4 services + `mongo` + `redis`, with `build.context: .`, ports, `env_file`, `depends_on`.
+- [ ] `docker-compose.yml` (repo root): 4 services + `mongo` + `redis`, with `build.context: .`, ports, `env_file`, `depends_on`.
 - [ ] `.gitignore` covers `.env`, `__pycache__`, `*.pyc`.
-- [ ] `README.md`: run instructions (`docker compose -f infra/docker-compose.yml up --build`) + the flow diagram.
+- [ ] `README.md`: run instructions (`docker compose up --build`) + the flow diagram.
 
 ---
 
@@ -188,7 +187,7 @@ Client → POST /stories (api-gateway)
 | `services/llm-service/app/main.py` | Mock generation |
 | `services/story-service/app/main.py` + `database.py` | Persistence + indexes |
 | `services/*/Dockerfile`, `requirements.txt`, `.env.template` | Per-service container + config |
-| `infra/docker-compose.yml` | Orchestrate services + mongo + redis |
+| `docker-compose.yml` | Orchestrate services + mongo + redis |
 | `services/*/tests/test_*.py` | pytest coverage |
 | `.gitignore`, `README.md` | Repo hygiene + docs |
 
