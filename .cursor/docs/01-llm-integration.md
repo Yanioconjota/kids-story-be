@@ -4,64 +4,152 @@
 
 ## Summary
 
-Replace the string-template mock in `POST /generate` with a real LLM call so stories are
-actually generated from the Child Theme, Character Name, and Story Prompt. This is the
-highest-value post-MVP change; the rest of the system (orchestration, moderation,
-persistence) stays untouched.
-
-## Current state
-
-`services/llm-service/app/main.py` builds `content` from an f-string template. It echoes the
-prompt back verbatim and has no narrative understanding — hence the "bland" output.
+Multi-provider LLM support via env vars. Switch between mock, OpenAI, Anthropic, or Ollama
+without code changes. Stories are generated using a child-safe system prompt that ensures
+age-appropriate tone, gentle vocabulary, and positive endings.
 
 ## Owning service
 
-`llm-service` only. The `api-gateway` already calls `POST /generate` and forwards the result
-to `story-service`; that contract does not change.
+`llm-service` only. The `api-gateway` calls `POST /generate` (sync) or `POST /generate/stream`
+(SSE) and forwards the result to `story-service`; contracts unchanged.
 
-## Contract changes
+## Provider Configuration
 
-No change to the public `Story` shape returned. Internally, add provider config via env vars
-(never hardcode keys):
+Edit `services/llm-service/.env`:
 
+```bash
+# Provider: mock | openai | anthropic | ollama
+LLM_PROVIDER=mock
+
+# Model name (provider-specific, leave blank for defaults)
+LLM_MODEL=
+
+# API key (required for openai and anthropic; not used for mock/ollama)
+LLM_API_KEY=
+
+# Base URL override (required for ollama, optional for others)
+LLM_BASE_URL=
 ```
-# services/llm-service/.env.template
-LLM_PROVIDER=openai          # openai | anthropic | ollama
+
+### Provider Examples
+
+**Mock (default, no API key):**
+```bash
+LLM_PROVIDER=mock
+```
+
+**OpenAI:**
+```bash
+LLM_PROVIDER=openai
 LLM_MODEL=gpt-4o-mini
-LLM_API_KEY=                 # left blank in template
-LLM_BASE_URL=                # optional, e.g. http://ollama:11434 for local
+LLM_API_KEY=sk-...
 ```
 
-Optionally extend `StoryRequest` (in `shared/contracts/story.py`) with safe, typed knobs:
+**Anthropic:**
+```bash
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-3-5-haiku-20241022
+LLM_API_KEY=sk-ant-...
+```
+
+**Ollama (local, free):**
+```bash
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+```
+
+## Ollama Setup (Local, Free)
+
+Ollama lets you run open-source models locally with no API costs.
+
+### 1. Install Ollama
+
+Download from [ollama.ai](https://ollama.ai/) or:
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows: download installer from ollama.ai
+```
+
+### 2. Pull a model
+
+```bash
+ollama pull llama3.2
+```
+
+Other good options: `mistral`, `gemma2`, `phi3`
+
+### 3. Start the server
+
+```bash
+ollama serve
+```
+
+Ollama runs on `http://localhost:11434` by default.
+
+### 4. Configure llm-service
+
+Edit `services/llm-service/.env`:
+
+```bash
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+```
+
+> **Why `host.docker.internal`?** Docker containers can't reach `localhost` on your host machine.
+> `host.docker.internal` is a special DNS name that resolves to your host.
+
+### 5. Rebuild and test
+
+```bash
+docker compose up --build
+```
+
+```bash
+curl -X POST http://localhost:8000/stories \
+  -H "Content-Type: application/json" \
+  -d '{"child_theme": "enchanted forest", "character_name": "Luna"}'
+```
+
+You should now see a real AI-generated story instead of the mock template.
+
+### Running Ollama in Docker (alternative)
+
+If you want Ollama inside Docker Compose, add to `docker-compose.yml`:
+
+```yaml
+ollama:
+  image: ollama/ollama
+  ports:
+    - "11434:11434"
+  volumes:
+    - ollama_data:/root/.ollama
+```
+
+Then use `LLM_BASE_URL=http://ollama:11434/v1` (container name, not `host.docker.internal`).
+
+## Implementation details
+
+- `app/llm_client.py` — `generate_content()` (sync) and `stream_content()` (async generator)
+- Child-safe system prompt instructs gentle vocabulary, life lessons, happy endings
+- `max_tokens=2000` supports stories up to ~1500 words (~10 min read-aloud)
+- Provider errors surface as `HTTPException(502, ...)` with clear messages
+
+## Request options
+
+`StoryRequest` includes:
 
 ```python
-class StoryRequest(BaseModel):
-    child_theme: str = Field(..., max_length=120)
-    character_name: str = Field(..., max_length=80)
-    prompt: Optional[str] = Field(default=None, max_length=500)
-    max_words: int = Field(default=300, ge=50, le=1000)   # optional length control
+max_words: int = Field(default=650, ge=50, le=1500)  # ~5 min read-aloud default
 ```
 
-## Implementation approach
-
-1. Add an `app/llm_client.py` in `llm-service` with an async `generate_content(request) -> str`.
-2. Build a child-safe system prompt (age-appropriate tone, gentle vocabulary, positive ending).
-3. Call the provider with `httpx.AsyncClient` (or the provider SDK if it's async-safe).
-4. Map provider failures to a clear `HTTPException(502, ...)` so the gateway surfaces a useful error.
-5. Keep the existing mock behind `LLM_PROVIDER=mock` for offline/dev runs and tests.
-
-## Rules applied
-
-- `002-fastapi-patterns.md` — `async def`, `httpx.AsyncClient` with timeout, specific `HTTPException`.
-- `000-project-context.md` — story-generation domain language; no scope creep (no narration/images).
-- `001-project-architecture.md` — config via `.env.template`, never commit keys.
+Pass `"max_words": 1000` in the request body for longer stories.
 
 ## Testing
 
-- `LLM_PROVIDER=mock` keeps existing deterministic tests green.
-- Add a test that mocks the provider HTTP call and asserts a non-empty `content` and 502 on provider error.
-
-## Out of scope
-
-- Streaming (see `02-sse-streaming.md`).
-- Image generation, narration/audio — excluded by MVP constraints.
+- `LLM_PROVIDER=mock` keeps tests deterministic (no API calls)
+- Tests cover mock output, streaming, and 502 error handling

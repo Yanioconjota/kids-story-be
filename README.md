@@ -16,7 +16,7 @@ Think of it like a little book-making shop with four workers, each doing one job
 |---|---|
 | 🚪 **The Receptionist** (`api-gateway`) | Takes your order at the front desk and coordinates everyone else. |
 | 🛡️ **The Safety Inspector** (`moderation-service`) | Checks that the story request is child-appropriate before anything gets written. |
-| ✍️ **The Storyteller** (`llm-service`) | Actually writes the story (currently a stand-in writer; a real AI author is coming). |
+| ✍️ **The Storyteller** (`llm-service`) | Writes the story — supports OpenAI, Anthropic, Ollama, or a mock for testing. |
 | 📦 **The Librarian** (`story-service`) | Saves the finished story to the bookshelf (MongoDB) and lets you look it up later. |
 
 If the Safety Inspector waves it through, the Storyteller writes the tale, and the Librarian files it away. If the Inspector flags it, the shop politely declines — no story is written.
@@ -40,14 +40,14 @@ If the Safety Inspector waves it through, the Storyteller writes the tale, and t
   ┌─────────────────────────────────────────────────────────────────┐
   │              moderation-service  :8001                          │
   │  Safety check — approves or rejects the request                 │
-  │  (mock: always approved in MVP)                                 │
+  │  (providers: mock | rules | openai)                             │
   └───────┬─────────────────────────────────────────────────────────┘
           │ POST /generate  (only if approved)
           ▼
   ┌─────────────────────────────────────────────────────────────────┐
   │              llm-service  :8002                                 │
   │  Story generation — produces the story text                     │
-  │  (mock: returns a fixed "Once upon a time…" in MVP)             │
+  │  (providers: mock | openai | anthropic | ollama)                │
   └───────┬─────────────────────────────────────────────────────────┘
           │ POST /stories
           ▼
@@ -59,7 +59,7 @@ If the Safety Inspector waves it through, the Storyteller writes the tale, and t
           ▼
   ┌───────────────────────┐     ┌──────────────────────────┐
   │   MongoDB  :27017     │     │   Redis  :6379            │
-  │  Story storage        │     │  Wired, not yet used      │
+  │  Story storage        │     │  Story caching            │
   └───────────────────────┘     └──────────────────────────┘
 ```
 
@@ -69,12 +69,12 @@ If the Safety Inspector waves it through, the Storyteller writes the tale, and t
 
 | Service | Port | Responsibility | Status |
 |---|---|---|---|
-| `api-gateway` | 8000 | Entry point, request orchestration | ✅ Live |
-| `moderation-service` | 8001 | Child-safety validation | 🟡 Mock (always approved) |
-| `llm-service` | 8002 | Story text generation | 🟡 Mock (fixed story) |
+| `api-gateway` | 8000 | Entry point, request orchestration, caching | ✅ Live |
+| `moderation-service` | 8001 | Child-safety validation | 🟡 Mock by default (configurable) |
+| `llm-service` | 8002 | Story text generation | 🟡 Mock by default (configurable) |
 | `story-service` | 8003 | Story persistence & retrieval (MongoDB) | ✅ Live |
 | `mongo` | 27017 | Story storage (MongoDB 7) | ✅ Live |
-| `redis` | 6379 | Caching (wired, unused in MVP) | 🔵 Wired |
+| `redis` | 6379 | Story caching | ✅ Live |
 
 ---
 
@@ -148,6 +148,63 @@ Each returns `{"status": "ok", "service": "<name>"}`.
 
 ---
 
+## ⚙️ Provider Configuration
+
+By default, the LLM and moderation services run in **mock mode** — no API keys required, great for development and testing. To generate real stories, configure the providers below.
+
+### LLM Providers (`llm-service`)
+
+Edit `services/llm-service/.env`:
+
+| Provider | Configuration |
+|----------|--------------|
+| **Mock** (default) | `LLM_PROVIDER=mock` — Returns a template story, no API needed |
+| **OpenAI** | `LLM_PROVIDER=openai`<br>`LLM_MODEL=gpt-4o-mini`<br>`LLM_API_KEY=sk-...` |
+| **Anthropic** | `LLM_PROVIDER=anthropic`<br>`LLM_MODEL=claude-3-5-haiku-20241022`<br>`LLM_API_KEY=sk-ant-...` |
+| **Ollama** (local) | `LLM_PROVIDER=ollama`<br>`LLM_MODEL=llama3.2`<br>`LLM_BASE_URL=http://host.docker.internal:11434/v1` |
+
+#### Ollama Setup (Local, Free)
+
+1. [Install Ollama](https://ollama.ai/) on your machine
+2. Pull a model: `ollama pull llama3.2`
+3. Make sure Ollama is running: `ollama serve`
+4. Edit `services/llm-service/.env`:
+
+```bash
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2
+# Use host.docker.internal so Docker containers can reach your host machine
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+```
+
+5. Rebuild: `docker compose up --build`
+
+> **Note:** If Ollama runs inside Docker (not on your host), use `LLM_BASE_URL=http://ollama:11434/v1` and add an `ollama` service to `docker-compose.yml`.
+
+### Moderation Providers (`moderation-service`)
+
+Edit `services/moderation-service/.env`:
+
+| Provider | Configuration |
+|----------|--------------|
+| **Mock** (default) | `MODERATION_PROVIDER=mock` — Always approves, for dev/testing |
+| **Rules** (local blocklist) | `MODERATION_PROVIDER=rules` — Keyword blocklist, no API key needed |
+| **OpenAI Moderation** | `MODERATION_PROVIDER=openai`<br>`MODERATION_API_KEY=sk-...` |
+
+For a kids' platform, we recommend at least `rules` in production — it's free and catches obvious issues. The `openai` provider adds AI-powered content classification but requires an API key.
+
+> **Child safety:** The `rules` and `openai` providers **fail closed** — if the moderation check fails for any reason, the request is rejected. Content is never passed through when safety can't be verified.
+
+### After Changing Providers
+
+Rebuild and restart the services:
+
+```bash
+docker compose up --build
+```
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -207,12 +264,14 @@ Here is what happens, step by step, when you call `POST /stories` — explained 
    Your request (`child_theme`, `character_name`, optional `prompt`) arrives at the **api-gateway** on port 8000. The receptionist writes it down and gets to work.
 
 2. **The receptionist sends it to the Safety Inspector.**
-   The gateway calls `POST /moderate` on the **moderation-service** (port 8001), forwarding your request. The inspector looks it over.
+   The gateway calls `POST /moderate` on the **moderation-service** (port 8001), forwarding your request. The inspector looks it over using the configured provider (mock, rules blocklist, or OpenAI Moderation).
    - ✅ *Approved?* Great — carry on.
    - ❌ *Rejected?* The receptionist sends you back a `400 Bad Request` with an explanation. No story is written, nothing is saved.
 
+   > **Shortcut:** Before calling the storyteller, the gateway checks Redis. If an identical request was made recently, it returns the cached story instantly — saving time and LLM costs.
+
 3. **The Storyteller gets the brief.**
-   With the green light, the gateway calls `POST /generate` on the **llm-service** (port 8002). The storyteller reads the theme and character name and produces the story text. Right now this is a friendly stand-in writer (mocked); a real AI will take this desk later.
+   With the green light, the gateway calls `POST /generate` on the **llm-service** (port 8002). The storyteller reads the theme and character name and produces the story text. Configure a real LLM provider (OpenAI, Anthropic, or Ollama) for AI-generated stories, or use the mock for testing.
 
 4. **The Librarian files the finished book.**
    The gateway takes the completed story and calls `POST /stories` on the **story-service** (port 8003). The librarian saves it to MongoDB with a unique ID and a timestamp.
@@ -269,33 +328,36 @@ PYTHONPATH=. pytest services/
 
 ---
 
-## 🚧 MVP Constraints (Intentionally Out of Scope)
+## ✅ Features Implemented
 
-This is a **bootstrap MVP**. The following are deliberate non-goals for this iteration:
+| Feature | Status | Details |
+|---|---|---|
+| **Multi-provider LLM** | ✅ Done | OpenAI, Anthropic, Ollama, or mock — env-switchable |
+| **SSE Streaming** | ✅ Done | `POST /stories/stream` streams tokens as they generate |
+| **Real Moderation** | ✅ Done | Local keyword blocklist or OpenAI Moderation API |
+| **Redis Caching** | ✅ Done | Identical requests return cached stories (1hr TTL) |
+| **Story Listing** | ✅ Done | `GET /stories?limit=20&offset=0` with pagination |
+| **Cache Management** | ✅ Done | `DELETE /cache` and `DELETE /cache/story` endpoints |
 
-| Feature | Why it's out of scope |
+---
+
+## 🚧 Out of Scope (For Now)
+
+| Feature | Why |
 |---|---|
-| Authentication / user accounts | No users model yet; auth adds significant surface area |
+| Authentication / user accounts | No users model yet; adds significant surface area |
 | Image generation | Requires a separate image-model pipeline |
-| Audio narration | Deferred; depends on a real LLM being wired in first |
+| Audio narration | Future feature after core story generation is stable |
 | Event buses (Kafka, RabbitMQ) | Sync HTTP is enough for the current load |
-| Real LLM integration | `llm-service` returns a mock story; real provider next |
-| SSE streaming | Planned for the next iteration in `llm-service` |
-
-Redis is **wired into Docker Compose** and the `REDIS_URL` env var is set — but no caching logic is implemented yet. It's ready to plug in.
 
 ---
 
 ## 🔭 What Comes Next
 
-Here is the short list of what's planned right after this MVP:
-
-1. **Real LLM** — Replace the mock `llm-service` with an actual provider call (e.g. OpenAI, Gemini, or a local model).
-2. **SSE Streaming** — Stream story tokens from `llm-service` back to the client as they are generated, so readers see words appearing live.
-3. **Real Moderation** — Swap the mock approval for a proper content-safety API (e.g. OpenAI Moderation, Perspective API).
-4. **Redis Caching** — Cache recently generated stories or repeated prompts to reduce LLM costs.
-5. **Story listing** — Add `GET /stories` with pagination to browse the saved library.
-6. **User accounts & auth** — Associate stories with a child's profile once the user model is designed.
+1. **User accounts & auth** — Associate stories with a child's profile once the user model is designed.
+2. **Post-generation moderation** — Run the generated story through moderation before saving (belt-and-suspenders safety).
+3. **Story search/filter** — Filter stories by theme, character, or date range.
+4. **Rate limiting** — Prevent abuse of the LLM endpoint.
 
 ---
 
